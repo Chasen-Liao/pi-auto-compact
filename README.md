@@ -2,7 +2,7 @@
 
 A minimal Pi extension that compacts the conversation **before sending a prompt** when the projected context (current usage plus the new input) crosses a configurable percentage of the current model's context window.
 
-Compaction itself always reuses Pi's built-in `ctx.compact()` implementation; Pi's own automatic compaction and overflow recovery stay enabled as the final safety net.
+Compaction itself always reuses Pi's built-in `ctx.compact()` implementation. Pi's own automatic compaction is untouched — if enabled in Pi's settings, it still acts as the final safety net.
 
 ## Install
 
@@ -44,6 +44,7 @@ The threshold is calculated against the active model's context window, so the sa
 - **Failure policy**: if preflight compaction fails, the prompt is **not sent** and an error is shown. Exceptions: "Nothing to compact" / "Already compacted" mean the context is already minimal, so the prompt is sent anyway.
 - **Status**: the footer shows a warning when context is past the threshold (next prompt will compact) and while preflight compaction is running.
 - **Not preflighted**: messages queued during an active run (steer/followUp), slash commands handled before the input event, and content injected later by `/skill:` or `/template` expansion — those remain covered by Pi's built-in compaction.
+- **Requires a known context window**: if the active model doesn't report one (or usage is unknown, e.g. right after a compaction), the preflight is skipped and Pi's built-in compaction covers it.
 - Session switches/reloads mid-compaction are detected; stale callbacks never touch the new session's status.
 
 ## Development
