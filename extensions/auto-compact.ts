@@ -73,6 +73,22 @@ function clearStatus(ctx: ExtensionContext): void {
 	}
 }
 
+/** Context usage worth acting on, or undefined when tokens are unknown (e.g. right after compaction). */
+function getValidUsage(ctx: ExtensionContext): { tokens: number; contextWindow: number } | undefined {
+	const usage = ctx.getContextUsage();
+	if (!usage || usage.tokens == null || usage.contextWindow <= 0) return undefined;
+	return { tokens: usage.tokens, contextWindow: usage.contextWindow };
+}
+
+/** Fire-and-forget notify that survives a stale ctx. */
+function notifySafe(ctx: ExtensionContext, text: string, kind: StatusKind): void {
+	try {
+		ctx.ui.notify(text, kind);
+	} catch {
+		// Ignore UI failures.
+	}
+}
+
 function isSoftCompactionError(error: Error): boolean {
 	return SOFT_COMPACT_ERRORS.some((message) => error.message.includes(message));
 }
@@ -80,7 +96,7 @@ function isSoftCompactionError(error: Error): boolean {
 export default function (pi: ExtensionAPI) {
 	let threshold = loadThreshold();
 	/** Bumped on session start/shutdown so async callbacks can detect a replaced session. */
-	let generation = 0;
+	let sessionGeneration = 0;
 	/** Shared in-flight preflight compaction; resolves once the compaction attempt settles. */
 	let inFlight: Promise<CompactionOutcome> | null = null;
 
@@ -108,11 +124,11 @@ export default function (pi: ExtensionAPI) {
 			try {
 				ctx.compact({
 					onComplete: () => {
-						if (gen === generation) clearStatus(ctx);
+						if (gen === sessionGeneration) clearStatus(ctx);
 						finish({ ok: true, error: null });
 					},
 					onError: (error) => {
-						if (gen === generation) setStatus(ctx, "compact failed", "error");
+						if (gen === sessionGeneration) setStatus(ctx, "compact failed", "error");
 						finish({ ok: false, error });
 					},
 				});
@@ -122,19 +138,56 @@ export default function (pi: ExtensionAPI) {
 		});
 
 	pi.on("session_start", (_event, ctx) => {
-		generation++;
+		sessionGeneration++;
 		clearStatus(ctx);
 	});
 
 	pi.on("session_shutdown", () => {
-		generation++;
+		sessionGeneration++;
+	});
+
+	pi.registerCommand("compact-threshold", {
+		description: "Show or set auto-compaction threshold (usage: /compact-threshold [1-99])",
+		handler: async (args, ctx) => {
+			const input = args.trim();
+			if (!input) {
+				ctx.ui.notify(`Auto-compaction threshold: ${threshold}%`, "info");
+				return;
+			}
+
+			if (input.toLowerCase() === "reset") {
+				try {
+					rmSync(CONFIG_FILE, { force: true });
+					threshold = DEFAULT_THRESHOLD;
+					ctx.ui.notify(`Auto-compaction threshold reset to ${threshold}%`, "info");
+				} catch {
+					ctx.ui.notify("Could not reset auto-compaction threshold", "error");
+				}
+				return;
+			}
+
+			const value = Number(input.replace(/%$/, ""));
+			if (!Number.isFinite(value) || value <= 0 || value >= 100) {
+				ctx.ui.notify("Usage: /compact-threshold [1-99] or /compact-threshold reset", "warning");
+				return;
+			}
+
+			try {
+				// Persist first, then update memory, so a failed save never desyncs the two.
+				saveThreshold(value);
+				threshold = value;
+				ctx.ui.notify(`Auto-compaction threshold set to ${threshold}%`, "info");
+			} catch {
+				ctx.ui.notify("Could not save auto-compaction threshold", "error");
+			}
+		},
 	});
 
 	// Status-only: show when the context is already past the threshold and the next
 	// prompt will trigger a preflight compaction. No compaction happens here.
 	pi.on("turn_end", (_event, ctx) => {
-		const usage = ctx.getContextUsage();
-		if (!usage || usage.tokens == null || usage.contextWindow <= 0) {
+		const usage = getValidUsage(ctx);
+		if (!usage) {
 			clearStatus(ctx);
 			return;
 		}
@@ -159,8 +212,8 @@ export default function (pi: ExtensionAPI) {
 		// ctx.compact() would abort the running agent.
 		if (event.streamingBehavior !== undefined) return { action: "continue" };
 
-		const usage = ctx.getContextUsage();
-		if (!usage || usage.tokens == null || usage.contextWindow <= 0) return { action: "continue" };
+		const usage = getValidUsage(ctx);
+		if (!usage) return { action: "continue" };
 
 		const content =
 			event.images && event.images.length > 0
@@ -169,7 +222,7 @@ export default function (pi: ExtensionAPI) {
 		const projected = usage.tokens + estimateTokens({ role: "user", content, timestamp: Date.now() });
 		if (projected < usage.contextWindow * (threshold / 100)) return { action: "continue" };
 
-		const gen = generation;
+		const gen = sessionGeneration;
 		const projectedPercent = ((projected / usage.contextWindow) * 100).toFixed(1);
 		setStatus(ctx, `projected ${projectedPercent}% · compacting before send`, "warning");
 
@@ -183,25 +236,14 @@ export default function (pi: ExtensionAPI) {
 			});
 		}
 		const outcome = await inFlight;
-		if (gen !== generation) return { action: "continue" };
+		if (gen !== sessionGeneration) return { action: "continue" };
 
 		if (outcome.error) {
 			if (isSoftCompactionError(outcome.error)) {
 				// The context is already minimal (e.g. compacted seconds ago); sending is safe.
-				try {
-					ctx.ui.notify(`Auto-compact skipped: ${outcome.error.message}. Sending prompt anyway.`, "warning");
-				} catch {
-					// Ignore UI failures.
-				}
+				notifySafe(ctx, `Auto-compact skipped: ${outcome.error.message}. Sending prompt anyway.`, "warning");
 			} else {
-				try {
-					ctx.ui.notify(
-						`Auto-compact failed: ${outcome.error.message}. Prompt not sent — resubmit when ready.`,
-						"error",
-					);
-				} catch {
-					// Ignore UI failures.
-				}
+				notifySafe(ctx, `Auto-compact failed: ${outcome.error.message}. Prompt not sent — resubmit when ready.`, "error");
 				return { action: "handled" };
 			}
 		}
