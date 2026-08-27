@@ -30,8 +30,11 @@
       "./extensions/*.ts"
     ]
   },
+  "engines": {
+    "node": ">=20"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": ">=0.84.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
