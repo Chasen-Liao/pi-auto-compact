@@ -1,0 +1,43 @@
+{
+  "name": "pi-auto-compact",
+  "version": "1.0.0",
+  "description": "Minimal Pi extension that automatically compacts context at a configurable usage threshold.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "compaction"
+  ],
+  "license": "MIT",
+  "author": "Chasen Liao",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chasen-Liao/pi-auto-compact.git"
+  },
+  "homepage": "https://github.com/Chasen-Liao/pi-auto-compact#readme",
+  "bugs": {
+    "url": "https://github.com/Chasen-Liao/pi-auto-compact/issues"
+  },
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE",
+    "tsconfig.json"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/*.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.3",
+    "typescript": "^5.0.0"
+  }
+}
