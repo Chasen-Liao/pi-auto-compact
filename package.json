@@ -22,8 +22,7 @@
   "files": [
     "extensions",
     "README.md",
-    "LICENSE",
-    "tsconfig.json"
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
@@ -37,10 +36,12 @@
     "@earendil-works/pi-coding-agent": ">=0.84.3"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node test/smoke.ts"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.3",
+    "@earendil-works/pi-coding-agent": "^0.84.4",
+    "@types/node": "^24.13.3",
     "typescript": "^5.0.0"
   }
 }
