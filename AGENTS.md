@@ -25,6 +25,6 @@ npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compa
 
 ## 当前状态
 
-- 1.1.0 已发布 npm 并安装到本机 pi（npm 来源）。工作区含未发布的硬化改动（超时兜底/fail-open/编辑器回填/配置热加载），发布前记得 `npm version patch`。README 与代码同步于 2026-08-31。
+- 1.1.1（硬化版：超时兜底/fail-open/编辑器回填/阈值区间 [30,99)/配置热加载）已提交并推送 GitHub；npm 发布待本机 `npm login` 后 `npm publish`。本机 pi 目前安装的是 1.1.0（npm 来源），发布后用 `pi update` 跟进。README 与代码同步于 2026-08-31。
 - 已知边界：模型未上报 `contextWindow` 时预检跳过（如 opencode-go 系）；steer/followUp 队列消息与 skill/template 展开后的膨胀不预检，由 Pi 内置压缩兜底。
 - 验证方式：改动后跑 `npm run typecheck` + `npm test`（mock 冒烟已入库 `test/smoke.ts`，覆盖阈值/软硬失败/abort/超时/并发/守护/配置路径），再用 `pi -p`/`pi -c -p` 在**隔离 cwd**做端到端（`pi -c` 会接同 cwd 最新 session，勿在活跃会话项目里测）。
