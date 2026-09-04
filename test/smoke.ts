@@ -189,22 +189,6 @@ test("hard error: prompt not sent, editor left untouched", async () => {
 	assert.match(h.notifies.at(-1)!.text, /Prompt not sent — resubmit when ready/);
 });
 
-test("stalled compaction times out fail-closed and later preflights keep working", async () => {
-	writeConfig({ threshold: 78, compactTimeoutMs: 1000 });
-	const pi = install(makePi());
-	const stalled = makeCtx({ usage: { tokens: 90, contextWindow: 100 }, onCompact: () => undefined });
-	const res = await pi.fireInput({ text: "hi" }, stalled.ctx);
-	assert.equal(res.action, "handled", "timeout keeps the fail-closed contract");
-	assert.match(stalled.notifies.at(-1)!.text, /timed out after 1s/);
-	assert.match(stalled.notifies.at(-1)!.text, /Prompt not sent/);
-	assert.ok(stalled.statuses.includes("compact timed out"));
-
-	// Deadlock guard: the timed-out in-flight promise must not block the next prompt.
-	const next = makeCtx({ usage: { tokens: 90, contextWindow: 100 }, onCompact: (c) => c.onComplete?.({}) });
-	assert.equal((await pi.fireInput({ text: "hi" }, next.ctx)).action, "continue");
-	assert.equal(next.compacts.length, 1);
-});
-
 // --- concurrency / session guarding -------------------------------------------
 
 test("two prompts racing past the guard share one compaction", async () => {

@@ -18,54 +18,28 @@ const DEFAULT_THRESHOLD = 78;
  */
 const MIN_THRESHOLD = 30;
 const MAX_THRESHOLD = 99;
-/**
- * Safety ceiling for one preflight compaction. Pi's ctx.compact() has no
- * cancel handle and its internal abort/summarization steps can stall without
- * ever invoking onComplete/onError (verified against SDK 0.84.3/0.84.4 — the
- * compact wrapper is byte-identical in both). Without this ceiling a stalled
- * compaction leaves the awaiting input handler suspended forever: in print
- * mode the event loop drains and the prompt is silently dropped; in the TUI
- * the session wedges until restart.
- */
-const DEFAULT_COMPACT_TIMEOUT_MS = 90_000;
 const STATUS_KEY = "pi-auto-compact";
 const CONFIG_FILE = join(getAgentDir(), "pi-auto-compact.json");
 /** Compaction errors meaning "the context is already as small as it can get" — safe to send the prompt anyway. */
 const SOFT_COMPACT_ERRORS = ["Nothing to compact", "Already compacted"];
 
-interface Config {
-	threshold: number;
-	compactTimeoutMs: number;
+function parseThreshold(raw: unknown, fallback: number): number {
+	const threshold = (raw as { threshold?: unknown } | null)?.threshold;
+	if (
+		typeof threshold === "number" &&
+		Number.isFinite(threshold) &&
+		threshold >= MIN_THRESHOLD &&
+		threshold < MAX_THRESHOLD
+	) {
+		return threshold;
+	}
+	return fallback;
 }
 
-const DEFAULT_CONFIG: Config = { threshold: DEFAULT_THRESHOLD, compactTimeoutMs: DEFAULT_COMPACT_TIMEOUT_MS };
-
-function parseConfig(raw: unknown, fallback: Config): Config {
-	const config = raw as { threshold?: unknown; compactTimeoutMs?: unknown } | null;
-	let { threshold, compactTimeoutMs } = fallback;
-	if (
-		typeof config?.threshold === "number" &&
-		Number.isFinite(config.threshold) &&
-		config.threshold >= MIN_THRESHOLD &&
-		config.threshold < MAX_THRESHOLD
-	) {
-		threshold = config.threshold;
-	}
-	if (
-		typeof config?.compactTimeoutMs === "number" &&
-		Number.isFinite(config.compactTimeoutMs) &&
-		config.compactTimeoutMs >= 1000 &&
-		config.compactTimeoutMs <= 600_000
-	) {
-		compactTimeoutMs = config.compactTimeoutMs;
-	}
-	return { threshold, compactTimeoutMs };
-}
-
-/** Read the config file, keeping the last-known values for any missing/invalid field. */
-function loadConfig(fallback: Config = DEFAULT_CONFIG): Config {
+/** Read the threshold from disk, keeping the last-known value when missing/invalid (hot reload). */
+function loadThreshold(fallback: number = DEFAULT_THRESHOLD): number {
 	try {
-		return parseConfig(JSON.parse(readFileSync(CONFIG_FILE, "utf8")), fallback);
+		return parseThreshold(JSON.parse(readFileSync(CONFIG_FILE, "utf8")), fallback);
 	} catch {
 		// Use the fallback when no valid config exists.
 		return fallback;
@@ -73,9 +47,8 @@ function loadConfig(fallback: Config = DEFAULT_CONFIG): Config {
 }
 
 function saveThreshold(threshold: number): void {
-	// Merge into the existing file so unknown keys (e.g. compactTimeoutMs)
-	// survive, then write to a temp file and rename, so a crash can never leave
-	// a half-written config.
+	// Merge into the existing file so unknown keys survive, then write to a temp
+	// file and rename, so a crash can never leave a half-written config.
 	mkdirSync(getAgentDir(), { recursive: true });
 	let existing: Record<string, unknown> = {};
 	try {
@@ -139,7 +112,8 @@ function isSoftCompactionError(error: Error): boolean {
 }
 
 export default function (pi: ExtensionAPI) {
-	let config = loadConfig();
+	/** Last-known valid threshold; re-read from disk before each prompt (hot reload). */
+	let threshold = loadThreshold();
 	/** Bumped on session start/shutdown so async callbacks can detect a replaced session. */
 	let sessionGeneration = 0;
 	/** Shared in-flight preflight compaction; resolves once the compaction attempt settles. */
@@ -150,38 +124,22 @@ export default function (pi: ExtensionAPI) {
 		ok: boolean;
 		/** The failure, when ok is false. */
 		error: Error | null;
-		/** True when we stopped waiting because the compaction never settled. */
-		timedOut?: boolean;
 	}
 
 	/**
 	 * Run ctx.compact() and wait for it to settle. ctx.compact() is fire-and-forget,
-	 * so completion is observed through its onComplete/onError callbacks — with a
-	 * timeout as a deadlock guard, because neither callback fires if Pi's internal
-	 * abort/summarization step stalls. The timer is deliberately NOT unref()'d: the
-	 * awaiting input handler has no other liveness guarantee (without it the event
-	 * loop drains and a print-mode prompt is silently dropped); finish() clears it
-	 * on settle so it never delays a healthy exit. UI access is guarded: if the
-	 * session was replaced mid-compaction, stale callbacks leave the UI alone.
+	 * so completion is observed through its onComplete/onError callbacks. All UI
+	 * access is guarded: if the session was replaced mid-compaction (gen mismatch)
+	 * the old session's status bar is left alone.
 	 */
-	const compactAndWait = (ctx: ExtensionContext, gen: number, timeoutMs: number): Promise<CompactionOutcome> =>
+	const compactAndWait = (ctx: ExtensionContext, gen: number): Promise<CompactionOutcome> =>
 		new Promise<CompactionOutcome>((resolve) => {
 			let settled = false;
-			let timer: ReturnType<typeof setTimeout> | undefined;
 			const finish = (outcome: CompactionOutcome) => {
 				if (settled) return;
 				settled = true;
-				if (timer !== undefined) clearTimeout(timer);
 				resolve(outcome);
 			};
-			timer = setTimeout(() => {
-				if (gen === sessionGeneration) setStatus(ctx, "compact timed out", "warning");
-				finish({
-					ok: false,
-					error: new Error(`Compaction timed out after ${Math.round(timeoutMs / 1000)}s`),
-					timedOut: true,
-				});
-			}, timeoutMs);
 			try {
 				ctx.compact({
 					onComplete: () => {
@@ -214,15 +172,15 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const input = args.trim();
 			if (!input) {
-				ctx.ui.notify(`Auto-compaction threshold: ${loadConfig(config).threshold}%`, "info");
+				ctx.ui.notify(`Auto-compaction threshold: ${loadThreshold(threshold)}%`, "info");
 				return;
 			}
 
 			if (input.toLowerCase() === "reset") {
 				try {
 					rmSync(CONFIG_FILE, { force: true });
-					config = DEFAULT_CONFIG;
-					ctx.ui.notify(`Auto-compaction threshold reset to ${config.threshold}%`, "info");
+					threshold = DEFAULT_THRESHOLD;
+					ctx.ui.notify(`Auto-compaction threshold reset to ${threshold}%`, "info");
 				} catch {
 					ctx.ui.notify("Could not reset auto-compaction threshold", "error");
 				}
@@ -238,8 +196,8 @@ export default function (pi: ExtensionAPI) {
 			try {
 				// Persist first, then update memory, so a failed save never desyncs the two.
 				saveThreshold(value);
-				config = { ...config, threshold: value };
-				ctx.ui.notify(`Auto-compaction threshold set to ${config.threshold}%`, "info");
+				threshold = value;
+				ctx.ui.notify(`Auto-compaction threshold set to ${threshold}%`, "info");
 			} catch {
 				ctx.ui.notify("Could not save auto-compaction threshold", "error");
 			}
@@ -249,14 +207,14 @@ export default function (pi: ExtensionAPI) {
 	// Status-only: show when the context is already past the threshold and the next
 	// prompt will trigger a preflight compaction. No compaction happens here.
 	pi.on("turn_end", (_event, ctx) => {
-		config = loadConfig(config);
+		threshold = loadThreshold(threshold);
 		const usage = getValidUsage(ctx);
 		if (!usage) {
 			clearStatus(ctx);
 			return;
 		}
 		const percent = (usage.tokens / usage.contextWindow) * 100;
-		if (percent >= config.threshold) {
+		if (percent >= threshold) {
 			// Pi's own status bar already shows usage/window; only add the actionable hint.
 			setStatus(ctx, "compact before next prompt", "warning");
 		} else {
@@ -274,7 +232,7 @@ export default function (pi: ExtensionAPI) {
 		if (event.streamingBehavior !== undefined) return { action: "continue" };
 
 		// Re-read per prompt so /compact-threshold changes from other sessions apply here.
-		config = loadConfig(config);
+		threshold = loadThreshold(threshold);
 		const usage = getValidUsage(ctx);
 		if (!usage) return { action: "continue" };
 
@@ -283,7 +241,7 @@ export default function (pi: ExtensionAPI) {
 				? [{ type: "text" as const, text: event.text }, ...event.images]
 				: event.text;
 		const projected = usage.tokens + estimateTokens({ role: "user", content, timestamp: Date.now() });
-		if (projected < usage.contextWindow * (config.threshold / 100)) return { action: "continue" };
+		if (projected < usage.contextWindow * (threshold / 100)) return { action: "continue" };
 
 		const gen = sessionGeneration;
 		const projectedPercent = ((projected / usage.contextWindow) * 100).toFixed(1);
@@ -292,7 +250,7 @@ export default function (pi: ExtensionAPI) {
 		// Serialize concurrent prompts that race past Pi's own compaction guard:
 		// reuse the in-flight compaction instead of starting a second one.
 		if (!inFlight) {
-			const current = compactAndWait(ctx, gen, config.compactTimeoutMs);
+			const current = compactAndWait(ctx, gen);
 			inFlight = current;
 			void current.finally(() => {
 				if (inFlight === current) inFlight = null;
@@ -306,15 +264,11 @@ export default function (pi: ExtensionAPI) {
 				// The context is already minimal (e.g. compacted seconds ago); sending is safe.
 				notifySafe(ctx, `Auto-compact skipped: ${outcome.error.message}. Sending prompt anyway.`, "warning");
 			} else {
-				// Hard failure or timeout: the context state is uncertain, so keep the
-				// fail-closed contract — the prompt is not sent and the user resubmits
-				// (recall it with the editor history). Note Pi's own compaction mutex
-				// stays locked while ctx.compact() is genuinely still running, so a
-				// resubmit queues until the background compaction settles.
-				const reason = outcome.timedOut
-					? `Auto-compact timed out after ${Math.round(config.compactTimeoutMs / 1000)}s`
-					: `Auto-compact failed: ${outcome.error.message}`;
-				notifySafe(ctx, `${reason}. Prompt not sent — resubmit when ready.`, "error");
+				// Fail-closed: the context state is uncertain, so the prompt is not sent
+				// and the user resubmits (recall it from the editor history). Note Pi's
+				// compaction mutex stays locked while ctx.compact() is genuinely still
+				// running, so a resubmit queues until the background compaction settles.
+				notifySafe(ctx, `Auto-compact failed: ${outcome.error.message}. Prompt not sent — resubmit when ready.`, "error");
 				return { action: "handled" };
 			}
 		}
