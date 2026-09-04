@@ -5,7 +5,8 @@ Pi 扩展：在发送 prompt 前预检上下文（当前 usage + 新输入 token
 ## 常用命令
 
 ```bash
-npm run typecheck        # tsc --noEmit（唯一门禁，无测试框架）
+npm run typecheck        # tsc --noEmit
+npm test                 # mock 冒烟（test/smoke.ts，Node 原生 TS，PI_CODING_AGENT_DIR 指向临时目录）
 pi -e .                  # 本地加载扩展启动 pi（交互验证）
 npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compact
 ```
@@ -16,11 +17,12 @@ npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compa
 - 压缩唯一入口是 `input` 事件里的 preflight（`compactAndWait`）。**禁止**在 `turn_end`/`agent_end` 里调 `ctx.compact()`——它会 abort 正在运行的工具链。
 - 不要用 `ctx.sendUserMessage` 重发原 prompt（`input` 事件在 `prompt()` 内触发，会无限递归）；返回 `{action:"continue"}` 让原 prompt 走正常流程。
 - 异步回调必须带 `sessionGeneration` 守护 + `notifySafe`/`clearStatus` 式 try/catch，session 切换后旧 ctx 访问 UI 会抛错。
-- 配置文件 `~/.pi/agent/pi-auto-compact.json`（`getAgentDir()` 解析），写入必须 temp+rename 原子写，先落盘成功再更新内存。
+- `ctx.compact()` 无取消句柄，内部 `await abort()`/hook/摘要调用可能永不回调（SDK 0.84.3/0.84.4 的 compact 包装逐字节相同，已源码确认）——`compactAndWait` 的超时定时器是唯一落定手段，**不可 unref**（awaiting 方只靠它保活；`finish()` 里 clearTimeout 保证不拖延退出）。超时/硬错误 → 拦下（fail-closed，↑键可召回重发）；软错误（`Nothing to compact`/`Already compacted`，用 includes 匹配）→ 放行。注意 Pi 自己的压缩互斥锁在 `ctx.compact()` 真挂住时不释放（finally 才清），重发会进压缩队列等后台落定。
+- 配置文件 `~/.pi/agent/pi-auto-compact.json`（`getAgentDir()` 解析，env `PI_CODING_AGENT_DIR` 可重定向——冒烟测试靠它隔离）。阈值合法区间 `[30, 99)`（下限依据：Pi 压缩保留 keepRecentTokens≈20000，过低只会落入"没东西可压"软失败循环；上限排除 99：压缩本身需要余量）；手改成越界值时回退上一有效值。preflight/turn_end 每次重读（热加载跨会话生效）；写入必须 temp+rename 原子写且与现有键合并（`compactTimeoutMs` 等），先落盘成功再更新内存。
 - `peerDependencies` 锁 `@earendil-works/pi-coding-agent >=0.84.3`；升级 pi 后需复测 `ctx.compact()`/`input` 事件语义。
 
 ## 当前状态
 
-- 1.1.2 已发布 npm（turn_end 状态栏只显示 `compact before next prompt`，用量展示交给 pi 自带状态栏；安装本机 pi 待 `pi update`）。历史：1.1.1（阈值收紧为 30–99）也出自本线。另一条未发布的硬化线（超时兑底/fail-open/test/smoke.ts）归档在 `hardened-1.1.1` 分支，后续可合入。README 与代码同步。
-- 已知边界：模型未上报 `contextWindow` 时预检跳过（如 opencode-go 系）；steer/followUp 队列消息与 skill/template 展开后的膨胀不预检，由 Pi 内置压缩兜底。
-- 验证方式：无测试框架。改动后跑 `npm run typecheck` + mock 冒烟脚本（mock `ExtensionAPI`，覆盖阈值/软硬失败/并发/守护路径），再用 `pi -p`/`pi -c -p` 在**隔离 cwd**做端到端（`pi -c` 会接同 cwd 最新 session，勿在活跃会话项目里测）。
+- 1.2.0：消融实验（真实 pi 隔离环境，R0–R3 差分）后从 hardened-1.1.1 选择性移植：超时兜底（`compactTimeoutMs` 默认 30s，超时→拦下）+ 配置热加载/键合并 + 阈值 [30,98) + test/smoke.ts 入库；砍掉 abort 放行、编辑器回填（↑键可召回已实证）、compactSequence、inFlight 生命周期置空（被超时覆盖）。
+- 已知边界：模型未上报 `contextWindow` 时预检跳过；steer/followUp 队列消息与 skill/template 展开后的膨胀不预检，由 Pi 内置压缩兜底。
+- 验证方式：改动后跑 `npm run typecheck` + `npm test`（mock 冒烟入库，覆盖阈值/软硬失败/超时/并发/守护/配置路径），再用 `pi -p`/`pi -c -p` 在**隔离 cwd + 隔离 PI_CODING_AGENT_DIR** 做端到端（`pi -c` 会接同 cwd 最新 session，勿在活跃会话项目里测）。
