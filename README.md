@@ -24,7 +24,7 @@ The default threshold is **78% used**. Change it inside Pi with:
 /compact-threshold 50
 ```
 
-Values are 0–100 (exclusive), decimals allowed. This saves the setting atomically. Show the current value:
+Values are 30–99 (inclusive), decimals allowed. This saves the setting atomically. Show the current value:
 
 ```text
 /compact-threshold

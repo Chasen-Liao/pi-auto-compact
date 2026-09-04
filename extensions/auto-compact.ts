@@ -8,6 +8,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 const DEFAULT_THRESHOLD = 78;
+const MIN_THRESHOLD = 30;
+const MAX_THRESHOLD = 99;
 const STATUS_KEY = "pi-auto-compact";
 const CONFIG_FILE = join(getAgentDir(), "pi-auto-compact.json");
 /** Compaction errors meaning "the context is already as small as it can get" — safe to send the prompt anyway. */
@@ -19,8 +21,8 @@ function loadThreshold(): number {
 		if (
 			typeof config.threshold === "number" &&
 			Number.isFinite(config.threshold) &&
-			config.threshold > 0 &&
-			config.threshold < 100
+			config.threshold >= MIN_THRESHOLD &&
+			config.threshold <= MAX_THRESHOLD
 		) {
 			return config.threshold;
 		}
@@ -147,7 +149,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("compact-threshold", {
-		description: "Show or set auto-compaction threshold (usage: /compact-threshold [1-99])",
+		description: "Show or set auto-compaction threshold (usage: /compact-threshold [30-99])",
 		handler: async (args, ctx) => {
 			const input = args.trim();
 			if (!input) {
@@ -167,8 +169,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const value = Number(input.replace(/%$/, ""));
-			if (!Number.isFinite(value) || value <= 0 || value >= 100) {
-				ctx.ui.notify("Usage: /compact-threshold [1-99] or /compact-threshold reset", "warning");
+			if (!Number.isFinite(value) || value < MIN_THRESHOLD || value > MAX_THRESHOLD) {
+				ctx.ui.notify("Usage: /compact-threshold [30-99] or /compact-threshold reset", "warning");
 				return;
 			}
 
