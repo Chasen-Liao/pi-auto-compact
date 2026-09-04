@@ -38,7 +38,7 @@ Reset to the default 78%:
 
 The threshold is calculated against the active model's context window, so the same percentage works across models with different window sizes.
 
-Optional `compactTimeoutMs` (1000–600000, default 30000) caps how long one preflight compaction may take; set it by hand in `~/.pi/agent/pi-auto-compact.json`. Both values are re-read before every prompt, so config changes apply without restarting the session.
+Optional `compactTimeoutMs` (1000–600000, default 90000) caps how long one preflight compaction may take; set it by hand in `~/.pi/agent/pi-auto-compact.json`. Both values are re-read before every prompt, so config changes apply without restarting the session.
 
 ## Behavior
 

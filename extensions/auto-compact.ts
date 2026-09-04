@@ -27,7 +27,7 @@ const MAX_THRESHOLD = 99;
  * mode the event loop drains and the prompt is silently dropped; in the TUI
  * the session wedges until restart.
  */
-const DEFAULT_COMPACT_TIMEOUT_MS = 30_000;
+const DEFAULT_COMPACT_TIMEOUT_MS = 90_000;
 const STATUS_KEY = "pi-auto-compact";
 const CONFIG_FILE = join(getAgentDir(), "pi-auto-compact.json");
 /** Compaction errors meaning "the context is already as small as it can get" — safe to send the prompt anyway. */

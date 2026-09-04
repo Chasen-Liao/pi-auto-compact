@@ -23,6 +23,6 @@ npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compa
 
 ## 当前状态
 
-- 1.2.0：消融实验（真实 pi 隔离环境，R0–R3 差分）后从 hardened-1.1.1 选择性移植：超时兜底（`compactTimeoutMs` 默认 30s，超时→拦下）+ 配置热加载/键合并 + 阈值 [30,98) + test/smoke.ts 入库；砍掉 abort 放行、编辑器回填（↑键可召回已实证）、compactSequence、inFlight 生命周期置空（被超时覆盖）。
+- 1.2.0：消融实验（真实 pi 隔离环境，R0–R3 差分）后从 hardened-1.1.1 选择性移植：超时兜底（`compactTimeoutMs` 默认 90s，超时→拦下）+ 配置热加载/键合并 + 阈值 [30,98) + test/smoke.ts 入库；砍掉 abort 放行、编辑器回填（↑键可召回已实证）、compactSequence、inFlight 生命周期置空（被超时覆盖）。
 - 已知边界：模型未上报 `contextWindow` 时预检跳过；steer/followUp 队列消息与 skill/template 展开后的膨胀不预检，由 Pi 内置压缩兜底。
 - 验证方式：改动后跑 `npm run typecheck` + `npm test`（mock 冒烟入库，覆盖阈值/软硬失败/超时/并发/守护/配置路径），再用 `pi -p`/`pi -c -p` 在**隔离 cwd + 隔离 PI_CODING_AGENT_DIR** 做端到端（`pi -c` 会接同 cwd 最新 session，勿在活跃会话项目里测）。
