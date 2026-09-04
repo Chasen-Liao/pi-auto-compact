@@ -1,6 +1,6 @@
 {
   "name": "pi-auto-compact",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Minimal Pi extension that automatically compacts context at a configurable usage threshold.",
   "type": "module",
   "keywords": [
