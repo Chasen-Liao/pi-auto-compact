@@ -56,7 +56,7 @@ npm test
 pi -e .
 ```
 
-`npm test` runs a mock smoke suite (`test/smoke.ts`, Node native TS type stripping) that covers threshold gating, failure classification, timeout, concurrency, session guarding, and config persistence.
+`npm test` runs a mock smoke suite (`test/smoke.ts`, Node native TS type stripping) that covers threshold gating, failure classification, concurrency, session guarding, and config persistence.
 
 ## License
 

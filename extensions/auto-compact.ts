@@ -73,21 +73,13 @@ function saveThreshold(threshold: number): void {
 
 type StatusKind = "info" | "warning" | "error";
 
-function setStatus(ctx: ExtensionContext, text: string, kind: StatusKind): void {
+function setStatus(ctx: ExtensionContext, text: string | undefined, kind: StatusKind = "info"): void {
 	if (!ctx.hasUI) return;
 	try {
-		ctx.ui.setStatus(STATUS_KEY, kind === "info" ? text : ctx.ui.theme.fg(kind, text));
+		if (text === undefined) ctx.ui.setStatus(STATUS_KEY, undefined);
+		else ctx.ui.setStatus(STATUS_KEY, kind === "info" ? text : ctx.ui.theme.fg(kind, text));
 	} catch {
 		// The ctx may be stale after a session switch/reload; never break the prompt flow over status updates.
-	}
-}
-
-function clearStatus(ctx: ExtensionContext): void {
-	if (!ctx.hasUI) return;
-	try {
-		ctx.ui.setStatus(STATUS_KEY, undefined);
-	} catch {
-		// Same as setStatus: a stale ctx must not break anything.
 	}
 }
 
@@ -116,51 +108,39 @@ export default function (pi: ExtensionAPI) {
 	let threshold = loadThreshold();
 	/** Bumped on session start/shutdown so async callbacks can detect a replaced session. */
 	let sessionGeneration = 0;
-	/** Shared in-flight preflight compaction; resolves once the compaction attempt settles. */
-	let inFlight: Promise<CompactionOutcome> | null = null;
-
-	interface CompactionOutcome {
-		/** Whether compaction completed. */
-		ok: boolean;
-		/** The failure, when ok is false. */
-		error: Error | null;
-	}
+	/** Shared in-flight preflight compaction; resolves to the failure (or null) once the compaction attempt settles. */
+	let inFlight: Promise<Error | null> | null = null;
 
 	/**
 	 * Run ctx.compact() and wait for it to settle. ctx.compact() is fire-and-forget,
-	 * so completion is observed through its onComplete/onError callbacks. All UI
-	 * access is guarded: if the session was replaced mid-compaction (gen mismatch)
-	 * the old session's status bar is left alone.
+	 * so completion is observed through its onComplete/onError callbacks (Pi invokes
+	 * exactly one). Resolves to the failure, or null on success. All UI access is
+	 * guarded: if the session was replaced mid-compaction (gen mismatch) the old
+	 * session's status bar is left alone.
 	 */
-	const compactAndWait = (ctx: ExtensionContext, gen: number): Promise<CompactionOutcome> =>
-		new Promise<CompactionOutcome>((resolve) => {
-			let settled = false;
-			const finish = (outcome: CompactionOutcome) => {
-				if (settled) return;
-				settled = true;
-				resolve(outcome);
-			};
+	const compactAndWait = (ctx: ExtensionContext, gen: number): Promise<Error | null> =>
+		new Promise<Error | null>((resolve) => {
 			try {
 				ctx.compact({
 					onComplete: () => {
-						if (gen === sessionGeneration) clearStatus(ctx);
-						finish({ ok: true, error: null });
+						if (gen === sessionGeneration) setStatus(ctx, undefined);
+						resolve(null);
 					},
 					onError: (error) => {
 						if (gen === sessionGeneration && !isSoftCompactionError(error)) {
 							setStatus(ctx, "compact failed", "error");
 						}
-						finish({ ok: false, error });
+						resolve(error);
 					},
 				});
 			} catch (error) {
-				finish({ ok: false, error: error instanceof Error ? error : new Error(String(error)) });
+				resolve(error instanceof Error ? error : new Error(String(error)));
 			}
 		});
 
 	pi.on("session_start", (_event, ctx) => {
 		sessionGeneration++;
-		clearStatus(ctx);
+		setStatus(ctx, undefined);
 	});
 
 	pi.on("session_shutdown", () => {
@@ -210,7 +190,7 @@ export default function (pi: ExtensionAPI) {
 		threshold = loadThreshold(threshold);
 		const usage = getValidUsage(ctx);
 		if (!usage) {
-			clearStatus(ctx);
+			setStatus(ctx, undefined);
 			return;
 		}
 		const percent = (usage.tokens / usage.contextWindow) * 100;
@@ -218,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 			// Pi's own status bar already shows usage/window; only add the actionable hint.
 			setStatus(ctx, "compact before next prompt", "warning");
 		} else {
-			clearStatus(ctx);
+			setStatus(ctx, undefined);
 		}
 	});
 
@@ -250,25 +230,24 @@ export default function (pi: ExtensionAPI) {
 		// Serialize concurrent prompts that race past Pi's own compaction guard:
 		// reuse the in-flight compaction instead of starting a second one.
 		if (!inFlight) {
-			const current = compactAndWait(ctx, gen);
-			inFlight = current;
-			void current.finally(() => {
-				if (inFlight === current) inFlight = null;
+			inFlight = compactAndWait(ctx, gen);
+			void inFlight.finally(() => {
+				inFlight = null;
 			});
 		}
-		const outcome = await inFlight;
+		const error = await inFlight;
 		if (gen !== sessionGeneration) return { action: "continue" };
 
-		if (outcome.error) {
-			if (isSoftCompactionError(outcome.error)) {
+		if (error) {
+			if (isSoftCompactionError(error)) {
 				// The context is already minimal (e.g. compacted seconds ago); sending is safe.
-				notifySafe(ctx, `Auto-compact skipped: ${outcome.error.message}. Sending prompt anyway.`, "warning");
+				notifySafe(ctx, `Auto-compact skipped: ${error.message}. Sending prompt anyway.`, "warning");
 			} else {
 				// Fail-closed: the context state is uncertain, so the prompt is not sent
 				// and the user resubmits (recall it from the editor history). Note Pi's
 				// compaction mutex stays locked while ctx.compact() is genuinely still
 				// running, so a resubmit queues until the background compaction settles.
-				notifySafe(ctx, `Auto-compact failed: ${outcome.error.message}. Prompt not sent — resubmit when ready.`, "error");
+				notifySafe(ctx, `Auto-compact failed: ${error.message}. Prompt not sent — resubmit when ready.`, "error");
 				return { action: "handled" };
 			}
 		}

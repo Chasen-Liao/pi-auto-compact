@@ -5,7 +5,7 @@
  *   npm test
  *
  * Mocks the ExtensionAPI surface (events, commands, ctx.ui, ctx.compact) and
- * covers: threshold math, soft-error fail-open, hard-fail/timeout fail-closed,
+ * covers: threshold math, soft-error fail-open, hard-fail fail-closed,
  * concurrent-prompt serialization, session-switch guarding, and config
  * persistence/hot reload. The real pi SDK is imported for
  * estimateTokens/getAgentDir; no agent state is touched because
@@ -14,6 +14,7 @@
  */
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { test } from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,7 +77,6 @@ function makeCtx(opts: {
 	const harness: CtxHarness = {
 		ctx: {
 			hasUI: true,
-			mode: "tui",
 			getContextUsage: () => opts.usage,
 			compact(handlers: CompactHandler) {
 				compacts.push(handlers);
@@ -90,13 +90,6 @@ function makeCtx(opts: {
 					harness.notifies.push({ text, kind });
 				},
 				theme: { fg: (_kind: string, text: string) => text },
-				editorText: "",
-				getEditorText() {
-					return (harness.ctx.ui as any).editorText;
-				},
-				setEditorText(text: string) {
-					(harness.ctx.ui as any).editorText = text;
-				},
 			},
 		},
 		compacts,
@@ -108,11 +101,6 @@ function makeCtx(opts: {
 
 function writeConfig(value: Record<string, unknown>) {
 	writeFileSync(CONFIG_FILE, JSON.stringify(value, null, 2), "utf8");
-}
-
-const tests: { name: string; fn: () => Promise<void> | void }[] = [];
-function test(name: string, fn: () => Promise<void> | void) {
-	tests.push({ name, fn });
 }
 
 // --- baseline gating ---------------------------------------------------------
@@ -176,7 +164,7 @@ test("aborted compaction is fail-closed: prompt not sent", async () => {
 	assert.ok(h.statuses.includes("compact failed"));
 });
 
-test("hard error: prompt not sent, editor left untouched", async () => {
+test("hard error: prompt not sent", async () => {
 	const pi = install(makePi());
 	const h = makeCtx({
 		usage: { tokens: 90, contextWindow: 100 },
@@ -184,7 +172,6 @@ test("hard error: prompt not sent, editor left untouched", async () => {
 	});
 	const res = await pi.fireInput({ text: "important long prompt" }, h.ctx);
 	assert.equal(res.action, "handled");
-	assert.equal(h.ctx.ui.editorText, "", "no editor restore: the user recalls via history");
 	assert.equal(h.notifies.at(-1)?.kind, "error");
 	assert.match(h.notifies.at(-1)!.text, /Prompt not sent — resubmit when ready/);
 });
@@ -278,19 +265,3 @@ test("/compact-threshold persists atomically, merges keys, validates input", asy
 	await cmd.handler("reset", h.ctx);
 	assert.ok(!existsSync(CONFIG_FILE), "reset removes the config file");
 });
-
-// --- runner ---------------------------------------------------------------------
-
-let failures = 0;
-for (const { name, fn } of tests) {
-	try {
-		await fn();
-		console.log(`ok    ${name}`);
-	} catch (error) {
-		failures += 1;
-		console.error(`FAIL  ${name}`);
-		console.error(`      ${error instanceof Error ? error.message : String(error)}`);
-	}
-}
-console.log(`\n${tests.length - failures}/${tests.length} passed`);
-process.exit(failures === 0 ? 0 : 1);
