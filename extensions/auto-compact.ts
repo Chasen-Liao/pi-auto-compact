@@ -49,12 +49,6 @@ function saveThreshold(threshold: number): void {
 	}
 }
 
-function formatTokens(tokens: number): string {
-	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-	if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
-	return `${Math.round(tokens)}`;
-}
-
 type StatusKind = "info" | "warning" | "error";
 
 function setStatus(ctx: ExtensionContext, text: string, kind: StatusKind): void {
@@ -195,11 +189,8 @@ export default function (pi: ExtensionAPI) {
 		}
 		const percent = (usage.tokens / usage.contextWindow) * 100;
 		if (percent >= threshold) {
-			setStatus(
-				ctx,
-				`${percent.toFixed(1)}%/${formatTokens(usage.contextWindow)} · compact before next prompt`,
-				"warning",
-			);
+			// Pi's own status bar already shows usage/window; only add the actionable hint.
+			setStatus(ctx, "compact before next prompt", "warning");
 		} else {
 			clearStatus(ctx);
 		}
