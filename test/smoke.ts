@@ -161,14 +161,21 @@ test("image prompts project image cost into usage (text alone stays below)", asy
 	const pi = install(makePi());
 	const textOnly = makeCtx({ usage: { tokens: 76, contextWindow: 100 } });
 	await pi.fireInput({ text: "hi" }, textOnly.ctx);
-	assert.equal(textOnly.compacts.length, 0, "76 + ~1 token stays under the 78% line");
+	assert.equal(
+		textOnly.compacts.length,
+		0,
+		"76 + ~1 token stays under the 78% line",
+	);
 
 	const withImage = makeCtx({
 		usage: { tokens: 76, contextWindow: 100 },
 		onCompact: (c) => c.onComplete?.({}),
 	});
 	const res = await pi.fireInput(
-		{ text: "hi", images: [{ type: "image", data: "Zm9v", mimeType: "image/png" }] },
+		{
+			text: "hi",
+			images: [{ type: "image", data: "Zm9v", mimeType: "image/png" }],
+		},
 		withImage.ctx,
 	);
 	assert.equal(res.action, "continue");

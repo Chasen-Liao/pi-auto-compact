@@ -23,6 +23,7 @@ npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compa
 
 ## 当前状态
 
-- 1.2.2（当前）：1.2.0 消融实验（真实 pi 隔离环境，R0–R3 差分）后从 hardened-1.1.1 选择性移植：配置热加载/键合并 + 阈值 [30,99) + test/smoke.ts 入库；砍掉 abort 放行、编辑器回填（↑键可召回已实证）、compactSequence、inFlight 生命周期置空、超时兜底（1.2.2 最终裁决：当前环境触发不可达，属投机防护）。
+- 1.2.3（当前）：ponytail 审计裁剪（净 -50 行，行为/文案不变）：node:test runner 取代手写 runner、compactAndWait 直接 resolve `Error | null`（删 settled 守卫与死字段 CompactionOutcome.ok）、clearStatus 并入 setStatus、删恒真 inFlight 守卫与 mock editor/mode 残留；冒烟扩到 12 条（补 images 投影分支，SDK 每图计 4800 字符）。
+- 1.2.2：1.2.0 消融实验（真实 pi 隔离环境，R0–R3 差分）后从 hardened-1.1.1 选择性移植：配置热加载/键合并 + 阈值 [30,99) + test/smoke.ts 入库；砍掉 abort 放行、编辑器回填（↑键可召回已实证）、compactSequence、inFlight 生命周期置空、超时兜底（1.2.2 最终裁决：当前环境触发不可达，属投机防护）。
 - 已知边界：模型未上报 `contextWindow` 时预检跳过；steer/followUp 队列消息与 skill/template 展开后的膨胀不预检，由 Pi 内置压缩兜底。
-- 验证方式：改动后跑 `npm run typecheck` + `npm test`（mock 冒烟入库，覆盖阈值/软硬失败/并发/守护/配置路径），再用 `pi -p`/`pi -c -p` 在**隔离 cwd + 隔离 PI_CODING_AGENT_DIR** 做端到端（`pi -c` 会接同 cwd 最新 session，勿在活跃会话项目里测）。
+- 验证方式：改动后跑 `npm run typecheck` + `npm test`（mock 冒烟入库，覆盖阈值/软硬失败/并发/守护/配置路径/images 投影），再用 `pi -p`/`pi -c -p` 在**隔离 cwd + 隔离 PI_CODING_AGENT_DIR** 做端到端（`pi -c` 会接同 cwd 最新 session，勿在活跃会话项目里测）。

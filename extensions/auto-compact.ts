@@ -1,4 +1,10 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
 	estimateTokens,
@@ -39,7 +45,10 @@ function parseThreshold(raw: unknown, fallback: number): number {
 /** Read the threshold from disk, keeping the last-known value when missing/invalid (hot reload). */
 function loadThreshold(fallback: number = DEFAULT_THRESHOLD): number {
 	try {
-		return parseThreshold(JSON.parse(readFileSync(CONFIG_FILE, "utf8")), fallback);
+		return parseThreshold(
+			JSON.parse(readFileSync(CONFIG_FILE, "utf8")),
+			fallback,
+		);
 	} catch {
 		// Use the fallback when no valid config exists.
 		return fallback;
@@ -58,7 +67,11 @@ function saveThreshold(threshold: number): void {
 		// Start from a clean object when the current file is missing or corrupt.
 	}
 	const tempFile = `${CONFIG_FILE}.${process.pid}.${Date.now()}.tmp`;
-	writeFileSync(tempFile, `${JSON.stringify({ ...existing, threshold }, null, 2)}\n`, "utf8");
+	writeFileSync(
+		tempFile,
+		`${JSON.stringify({ ...existing, threshold }, null, 2)}\n`,
+		"utf8",
+	);
 	try {
 		renameSync(tempFile, CONFIG_FILE);
 	} catch (error) {
@@ -73,25 +86,40 @@ function saveThreshold(threshold: number): void {
 
 type StatusKind = "info" | "warning" | "error";
 
-function setStatus(ctx: ExtensionContext, text: string | undefined, kind: StatusKind = "info"): void {
+function setStatus(
+	ctx: ExtensionContext,
+	text: string | undefined,
+	kind: StatusKind = "info",
+): void {
 	if (!ctx.hasUI) return;
 	try {
 		if (text === undefined) ctx.ui.setStatus(STATUS_KEY, undefined);
-		else ctx.ui.setStatus(STATUS_KEY, kind === "info" ? text : ctx.ui.theme.fg(kind, text));
+		else
+			ctx.ui.setStatus(
+				STATUS_KEY,
+				kind === "info" ? text : ctx.ui.theme.fg(kind, text),
+			);
 	} catch {
 		// The ctx may be stale after a session switch/reload; never break the prompt flow over status updates.
 	}
 }
 
 /** Context usage worth acting on, or undefined when tokens are unknown (e.g. right after compaction). */
-function getValidUsage(ctx: ExtensionContext): { tokens: number; contextWindow: number } | undefined {
+function getValidUsage(
+	ctx: ExtensionContext,
+): { tokens: number; contextWindow: number } | undefined {
 	const usage = ctx.getContextUsage();
-	if (!usage || usage.tokens == null || usage.contextWindow <= 0) return undefined;
+	if (!usage || usage.tokens == null || usage.contextWindow <= 0)
+		return undefined;
 	return { tokens: usage.tokens, contextWindow: usage.contextWindow };
 }
 
 /** Fire-and-forget notify that survives a stale ctx. */
-function notifySafe(ctx: ExtensionContext, text: string, kind: StatusKind): void {
+function notifySafe(
+	ctx: ExtensionContext,
+	text: string,
+	kind: StatusKind,
+): void {
 	try {
 		ctx.ui.notify(text, kind);
 	} catch {
@@ -118,7 +146,10 @@ export default function (pi: ExtensionAPI) {
 	 * guarded: if the session was replaced mid-compaction (gen mismatch) the old
 	 * session's status bar is left alone.
 	 */
-	const compactAndWait = (ctx: ExtensionContext, gen: number): Promise<Error | null> =>
+	const compactAndWait = (
+		ctx: ExtensionContext,
+		gen: number,
+	): Promise<Error | null> =>
 		new Promise<Error | null>((resolve) => {
 			try {
 				ctx.compact({
@@ -152,7 +183,10 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const input = args.trim();
 			if (!input) {
-				ctx.ui.notify(`Auto-compaction threshold: ${loadThreshold(threshold)}%`, "info");
+				ctx.ui.notify(
+					`Auto-compaction threshold: ${loadThreshold(threshold)}%`,
+					"info",
+				);
 				return;
 			}
 
@@ -168,8 +202,15 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const value = Number(input.replace(/%$/, ""));
-			if (!Number.isFinite(value) || value < MIN_THRESHOLD || value >= MAX_THRESHOLD) {
-				ctx.ui.notify(`Usage: /compact-threshold [${MIN_THRESHOLD}-${MAX_THRESHOLD - 1}] or /compact-threshold reset`, "warning");
+			if (
+				!Number.isFinite(value) ||
+				value < MIN_THRESHOLD ||
+				value >= MAX_THRESHOLD
+			) {
+				ctx.ui.notify(
+					`Usage: /compact-threshold [${MIN_THRESHOLD}-${MAX_THRESHOLD - 1}] or /compact-threshold reset`,
+					"warning",
+				);
 				return;
 			}
 
@@ -220,12 +261,19 @@ export default function (pi: ExtensionAPI) {
 			event.images && event.images.length > 0
 				? [{ type: "text" as const, text: event.text }, ...event.images]
 				: event.text;
-		const projected = usage.tokens + estimateTokens({ role: "user", content, timestamp: Date.now() });
-		if (projected < usage.contextWindow * (threshold / 100)) return { action: "continue" };
+		const projected =
+			usage.tokens +
+			estimateTokens({ role: "user", content, timestamp: Date.now() });
+		if (projected < usage.contextWindow * (threshold / 100))
+			return { action: "continue" };
 
 		const gen = sessionGeneration;
 		const projectedPercent = ((projected / usage.contextWindow) * 100).toFixed(1);
-		setStatus(ctx, `projected ${projectedPercent}% · compacting before send`, "warning");
+		setStatus(
+			ctx,
+			`projected ${projectedPercent}% · compacting before send`,
+			"warning",
+		);
 
 		// Serialize concurrent prompts that race past Pi's own compaction guard:
 		// reuse the in-flight compaction instead of starting a second one.
@@ -241,13 +289,21 @@ export default function (pi: ExtensionAPI) {
 		if (error) {
 			if (isSoftCompactionError(error)) {
 				// The context is already minimal (e.g. compacted seconds ago); sending is safe.
-				notifySafe(ctx, `Auto-compact skipped: ${error.message}. Sending prompt anyway.`, "warning");
+				notifySafe(
+					ctx,
+					`Auto-compact skipped: ${error.message}. Sending prompt anyway.`,
+					"warning",
+				);
 			} else {
 				// Fail-closed: the context state is uncertain, so the prompt is not sent
 				// and the user resubmits (recall it from the editor history). Note Pi's
 				// compaction mutex stays locked while ctx.compact() is genuinely still
 				// running, so a resubmit queues until the background compaction settles.
-				notifySafe(ctx, `Auto-compact failed: ${error.message}. Prompt not sent — resubmit when ready.`, "error");
+				notifySafe(
+					ctx,
+					`Auto-compact failed: ${error.message}. Prompt not sent — resubmit when ready.`,
+					"error",
+				);
 				return { action: "handled" };
 			}
 		}
