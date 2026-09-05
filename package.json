@@ -13,7 +13,7 @@
   "author": "Chasen Liao",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Chasen-Liao/pi-auto-compact.git"
+    "url": "git+https://github.com/Chasen-Liao/pi-auto-compact.git"
   },
   "homepage": "https://github.com/Chasen-Liao/pi-auto-compact#readme",
   "bugs": {
