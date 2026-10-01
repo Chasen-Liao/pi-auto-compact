@@ -1,15 +1,17 @@
 # AGENTS.md
 
-Pi 扩展：在发送 prompt 前预检上下文（当前 usage + 新输入 token），超过阈值百分比就先压缩再发送，避免长输入中断工具链。压缩始终复用 Pi 内置 `ctx.compact()`。
+Pi 扩展：发送 prompt 前预检上下文（当前 usage + 新输入 token），超过阈值百分比就先压缩再发送，避免长输入中断工具链；运行中在每次工具调用前报告还有哪次压缩待发生。发 prompt 前的压缩复用 Pi 内置 `ctx.compact()`，中途压缩交给 Pi 自己在工具批次之间做（见下）。
 
 ## 常用命令
 
 ```bash
 npm run typecheck        # tsc --noEmit
-npm test                 # mock 冒烟（test/smoke.ts，Node 原生 TS，PI_CODING_AGENT_DIR 指向临时目录）
+npm test                 # mock 冒烟（test/smoke.ts，Node 原生 TS，PI_CODING_AGENT_DIR 指向临时目录，跑完自清理）
 pi -e .                  # 本地加载扩展启动 pi（交互验证）
 npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compact
 ```
+
+改动 `peerDependencies`/`devDependencies`/`engines` 后要跑 `npm install --package-lock-only`，否则 `npm ci` 会报 lock 与 package.json 不同步。
 
 ## 架构与约定
 
@@ -28,7 +30,7 @@ npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compa
 
 ## 当前状态
 
-- 1.3.0（未发布）：适配 pi 0.99.1 + 工具调用前的上下文检查。审计 0.85→0.99.1 的 changelog 与 dist 源码后确认：既有 preflight 语义（`input.streamingBehavior`、`getContextUsage`、`ctx.compact` 回调、soft/hard 分类）完全兼容，无需改动；新增 `tool_call` 处理器（只报状态、不压缩不 block）与 opt-in 阈值对齐（`/compact-threshold align on|off` 改写 pi 的 `compaction.modelOverrides`，需 `/reload` 生效）；配置层从单 `threshold` 扩为 `{threshold, alignPiThreshold, alignedReserveTokens}`；peer 抬到 `>=0.99.0`（唯一硬依赖是 `pi.getSettings()`）。冒烟 24 条。
+- 1.3.0（已发布 2026-10-01，tag v1.3.0）：适配 pi 0.99.1 + 工具调用前的上下文检查。审计 0.85→0.99.1 的 changelog 与 dist 源码后确认：既有 preflight 语义（`input.streamingBehavior`、`getContextUsage`、`ctx.compact` 回调、soft/hard 分类）完全兼容，无需改动；新增 `tool_call` 处理器（只报状态、不压缩不 block）与 opt-in 阈值对齐（`/compact-threshold align on|off` 改写 pi 的 `compaction.modelOverrides`，需 `/reload` 生效）；配置层从单 `threshold` 扩为 `{threshold, alignPiThreshold, alignedReserveTokens}`；peer 抬到 `>=0.99.0`（唯一硬依赖是 `pi.getSettings()`），`engines.node` 同步到 `>=22.19.0`。发版前 review 修掉三处：命令入口不热加载 config、`alignedReserveTokens` 接受非对象、对齐写盘失败会抛到 `session_start`。冒烟 24 条（自清理临时 agent 目录）。
 - 1.2.3：ponytail 审计裁剪（净 -50 行，行为/文案不变）：node:test runner 取代手写 runner、compactAndWait 直接 resolve `Error | null`（删 settled 守卫与死字段 CompactionOutcome.ok）、clearStatus 并入 setStatus、删恒真 inFlight 守卫与 mock editor/mode 残留；冒烟扩到 12 条（补 images 投影分支，SDK 每图计 4800 字符）。
 - 1.2.2：1.2.0 消融实验（真实 pi 隔离环境，R0–R3 差分）后从 hardened-1.1.1 选择性移植：配置热加载/键合并 + 阈值 [30,99) + test/smoke.ts 入库；砍掉 abort 放行、编辑器回填（↑键可召回已实证）、compactSequence、inFlight 生命周期置空、超时兜底（1.2.2 最终裁决：当前环境触发不可达，属投机防护）。
 - 已知边界：模型未上报 `contextWindow` 时预检跳过；steer/followUp 队列消息与 skill/template 展开后的膨胀不预检，由 Pi 内置压缩兜底；`tool_call` 检查用当前 usage，不预测尚未产生的工具结果（结果才是上下文大头）；对齐后的 reserve 同时抬高摘要输出上限。

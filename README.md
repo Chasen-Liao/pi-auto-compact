@@ -1,8 +1,8 @@
 # pi-auto-compact
 
-A minimal Pi extension that compacts the conversation **before sending a prompt** when the projected context (current usage plus the new input) crosses a configurable percentage of the current model's context window.
+A minimal Pi extension that compacts the conversation **before sending a prompt** when the projected context (current usage plus the new input) crosses a configurable percentage of the current model's context window, and reports context pressure **before every tool call** during a run.
 
-Compaction itself always reuses Pi's built-in `ctx.compact()` implementation. Pi's own automatic compaction is untouched — if enabled in Pi's settings, it still acts as the final safety net, including its mid-run check between tool batches.
+Compaction itself always reuses Pi's built-in `ctx.compact()` implementation. Pi's own automatic compaction stays the safety net — including its mid-run check between tool batches — and the only thing the extension ever writes into Pi's settings is one per-model compaction budget, and only when you opt in with `/compact-threshold align on`.
 
 Requires `@earendil-works/pi-coding-agent >= 0.99.0` on Node 22.19+ (verified against pi 0.99.1).
 
@@ -38,7 +38,7 @@ Reset to the default 78%:
 /compact-threshold reset
 ```
 
-The threshold is calculated against the active model's context window, so the same percentage works across models with different window sizes. It is re-read before every prompt, so config changes apply without restarting the session.
+The threshold is calculated against the active model's context window, so the same percentage works across models with different window sizes. It is re-read before every prompt and turn, so config changes apply without restarting the session.
 
 ## Mid-run (between tool calls) compaction
 
