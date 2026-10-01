@@ -15,12 +15,14 @@
  */
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const agentDir = mkdtempSync(join(tmpdir(), "pi-auto-compact-smoke-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// The suite owns this throwaway agent dir; leaving one per run behind fills %TEMP%.
+after(() => rmSync(agentDir, { recursive: true, force: true }));
 const CONFIG_FILE = join(agentDir, "pi-auto-compact.json");
 const SETTINGS_FILE = join(agentDir, "settings.json");
 /** deepseek-flash-shaped model: 1M window, so 78% leaves a 220k reserve. */
