@@ -13,6 +13,12 @@ npm version minor/patch  # 发版；npm publish 后 pi install npm:pi-auto-compa
 
 改动 `peerDependencies`/`devDependencies`/`engines` 后要跑 `npm install --package-lock-only`，否则 `npm ci` 会报 lock 与 package.json 不同步。
 
+`npm publish` 需要 npm 账号 2FA（会话 token 会报 EOTP）；想免掉每次网页确认就在本机跑一次下面这条（会提示账号密码，令牌直接写回 `~/.npmrc`，不要把它贴进对话或提交）：
+
+```bash
+npm token create --name "pi-auto-compact publish" --packages pi-auto-compact --packages-and-scopes-permission read-write --expires 365
+```
+
 ## 架构与约定
 
 - 全部源码在 `extensions/auto-compact.ts`，`package.json` 的 `pi.extensions` 指向它。TS 直接由 pi 加载，无构建步骤。
