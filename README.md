@@ -4,7 +4,7 @@ A minimal Pi extension that compacts the conversation **before sending a prompt*
 
 Compaction itself always reuses Pi's built-in `ctx.compact()` implementation. Pi's own automatic compaction stays the safety net — including its mid-run check between tool batches — and the only thing the extension ever writes into Pi's settings is one per-model compaction budget, and only when you opt in with `/compact-threshold align on`.
 
-Requires `@earendil-works/pi-coding-agent >= 0.99.0` on Node 22.19+ (verified against pi 0.99.1).
+Requires `@earendil-works/pi-coding-agent >= 0.99.0` on Node 22.19+ (verified against pi 1.0.2).
 
 ## Install
 
